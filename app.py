@@ -1,5 +1,5 @@
 # ============================================================
-# CaGS-AP FINAL MERGED APPLICATION (Upgraded Research Version)
+# CaGS-AP FINAL CLEAN PRODUCTION VERSION
 # ============================================================
 
 import streamlit as st
@@ -7,11 +7,17 @@ import pandas as pd
 import numpy as np
 import joblib
 import os
+import warnings
+
 from rdkit import Chem
-from rdkit.Chem import AllChem, MACCSkeys
+from rdkit.Chem import rdFingerprintGenerator
+from rdkit.Chem import MACCSkeys
 from rdkit.Chem.Scaffolds import MurckoScaffold
 
-# ---- Safe Matplotlib Backend (Cloud Compatible) ----
+# ---- Suppress sklearn feature warnings ----
+warnings.filterwarnings("ignore", category=UserWarning)
+
+# ---- Safe Matplotlib Backend ----
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -24,15 +30,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 # PAGE CONFIG
 # ============================================================
 
-st.set_page_config(
-    page_title="CaGS-AP | CURAJ",
-    page_icon="🧬",
-    layout="wide"
-)
-
-# ============================================================
-# HEADER
-# ============================================================
+st.set_page_config(page_title="CaGS-AP | CURAJ", page_icon="🧬", layout="wide")
 
 st.markdown("<h1 style='text-align:center;'>CaGS-AP</h1>", unsafe_allow_html=True)
 st.markdown("<h4 style='text-align:center;'>AI-Driven Antifungal Activity Predictor</h4>", unsafe_allow_html=True)
@@ -72,19 +70,26 @@ def load_model(name):
     return joblib.load(os.path.join(MODEL_DIR,name))
 
 # ============================================================
-# FINGERPRINTS
+# FINGERPRINTS (UPDATED TO REMOVE DEPRECATION WARNING)
 # ============================================================
 
+morgan_gen = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=1024)
+
 def fingerprints_from_smiles(smiles):
+
     mol = Chem.MolFromSmiles(str(smiles))
     if mol is None:
         return None
 
-    ecfp = AllChem.GetMorganFingerprintAsBitVect(mol,2,1024)
-    fcfp = AllChem.GetMorganFingerprintAsBitVect(mol,2,1024,useFeatures=True)
+    ecfp = morgan_gen.GetFingerprint(mol)
+    fcfp = morgan_gen.GetFingerprint(mol, useFeatures=True)
     maccs = MACCSkeys.GenMACCSKeys(mol)
 
-    return np.concatenate([np.array(ecfp),np.array(fcfp),np.array(maccs)])
+    return np.concatenate([
+        np.array(ecfp),
+        np.array(fcfp),
+        np.array(maccs)
+    ])
 
 def get_scaffold(smiles):
     mol = Chem.MolFromSmiles(smiles)
@@ -139,7 +144,8 @@ def run_screening(df, smiles_col, models):
         if not fps:
             continue
 
-        X = pd.DataFrame(fps,index=keep)
+        X = pd.DataFrame(fps, index=keep)
+
         X = pipeline["var_thresh"].transform(X)
         X = pipeline["feat_selector"].transform(X)
         X = pipeline["scaler"].transform(X)
@@ -171,63 +177,6 @@ def run_screening(df, smiles_col, models):
 
     final = pd.concat(results_all)
     return final.sort_values("Consensus_Probability", ascending=False)
-
-# ============================================================
-# PLOTS (Publication Ready)
-# ============================================================
-
-def plot_probability(df):
-
-    fig, ax = plt.subplots(figsize=(8,5), dpi=300)
-    ax.hist(df["Consensus_Probability"], bins=30)
-    ax.set_xlabel("Consensus Probability")
-    ax.set_ylabel("Frequency")
-    ax.set_title("Probability Distribution")
-
-    st.pyplot(fig)
-
-    fig.savefig("probability_plot.png", dpi=300, bbox_inches="tight")
-    with open("probability_plot.png", "rb") as f:
-        st.download_button("Download High-Resolution Plot", f, "probability_plot.png")
-
-def plot_heatmap(df):
-
-    prob_cols = [c for c in df.columns if c.endswith("_Prob")]
-    fig, ax = plt.subplots(figsize=(10,6), dpi=300)
-
-    im = ax.imshow(df[prob_cols].head(30), aspect="auto")
-    fig.colorbar(im)
-    ax.set_title("Model Probability Heatmap")
-
-    st.pyplot(fig)
-
-    fig.savefig("heatmap.png", dpi=300, bbox_inches="tight")
-    with open("heatmap.png", "rb") as f:
-        st.download_button("Download Heatmap", f, "heatmap.png")
-
-# ============================================================
-# PDF REPORT
-# ============================================================
-
-def generate_pdf_report(results):
-
-    doc = SimpleDocTemplate("CaGS_AP_Report.pdf")
-    elements = []
-    styles = getSampleStyleSheet()
-
-    elements.append(Paragraph("CaGS-AP Screening Report", styles["Heading1"]))
-    elements.append(Spacer(1,12))
-    elements.append(Paragraph(f"Total Compounds: {len(results)}", styles["Normal"]))
-    elements.append(Spacer(1,12))
-
-    top_hits = results.head(10)
-    data = [top_hits.columns.tolist()] + top_hits.values.tolist()
-    elements.append(Table(data))
-
-    doc.build(elements)
-
-    with open("CaGS_AP_Report.pdf","rb") as f:
-        st.download_button("Download Full PDF Report", f, "CaGS_AP_Report.pdf")
 
 # ============================================================
 # APP LOGIC
@@ -268,29 +217,12 @@ if mode == "Upload CSV":
                 results["Confidence"] = results.apply(assign_confidence, axis=1)
                 results["Scaffold"] = results[smiles_col].apply(get_scaffold)
 
-                st.subheader("Screening Statistics")
-                st.metric("Total Compounds", len(results))
-                st.metric("Active Predictions", sum(results["Consensus_Probability"] >= 0.5))
-                st.metric("Mean Probability", round(results["Consensus_Probability"].mean(),4))
-
+                st.subheader("Screening Results")
                 st.dataframe(results)
 
-                plot_probability(results)
-                plot_heatmap(results)
-
-                st.subheader("Top Scaffolds (SAR Insight)")
-                scaffold_counts = results["Scaffold"].value_counts().head(15)
-                st.dataframe(scaffold_counts)
-
-                scaffold_counts.to_csv("scaffold_summary.csv")
-                with open("scaffold_summary.csv","rb") as f:
-                    st.download_button("Download Scaffold Summary", f, "scaffold_summary.csv")
-
-                st.download_button("Download Results CSV",
+                st.download_button("Download Results",
                                    results.to_csv(index=False),
                                    "CaGS_AP_results.csv")
-
-                generate_pdf_report(results)
 
 else:
 
