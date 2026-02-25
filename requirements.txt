@@ -6,3 +6,5 @@ scikit-learn==1.6.1
 rdkit
 imbalanced-learn
 xgboost
+matplotlib
+reportlab
