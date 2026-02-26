@@ -108,6 +108,21 @@ def fingerprints_from_smiles(smiles):
 
     return np.concatenate([ecfp_arr, fcfp_arr, maccs_arr])
 # ============================================================
+# SCAFFOLD GENERATION
+# ============================================================
+
+from rdkit.Chem.Scaffolds import MurckoScaffold
+
+def get_scaffold(smiles):
+    try:
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            return None
+        scaffold = MurckoScaffold.GetScaffoldForMol(mol)
+        return Chem.MolToSmiles(scaffold)
+    except:
+        return None
+# ============================================================
 # CONSENSUS METRICS
 # ============================================================
 
@@ -270,6 +285,7 @@ else:
             st.write(f"Std Dev: {sd_prob:.4f}")
 
             st.table(pd.DataFrame(prob_dict,index=["Probability"]).T)
+
 
 
 
