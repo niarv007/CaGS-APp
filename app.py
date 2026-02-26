@@ -257,7 +257,36 @@ if mode == "Upload CSV":
                 fig4, ax4 = plt.subplots(figsize=(8,5))
                 top_scaffolds.plot(kind="barh", ax=ax4)
                 st.pyplot(fig4)
+# ================= HEATMAP =================
 
+st.subheader("Model Probability Heatmap (Top 25 Compounds)")
+
+prob_cols = [c for c in results.columns if c.endswith("_Prob")]
+
+if len(prob_cols) > 0:
+
+    heatmap_data = results[prob_cols].head(25)
+
+    fig_hm, ax_hm = plt.subplots(figsize=(10,6))
+
+    im = ax_hm.imshow(heatmap_data.values, aspect="auto")
+
+    ax_hm.set_xticks(range(len(prob_cols)))
+    ax_hm.set_xticklabels(prob_cols, rotation=45, ha="right")
+
+    ax_hm.set_yticks(range(len(heatmap_data)))
+    ax_hm.set_yticklabels(range(1, len(heatmap_data)+1))
+
+    ax_hm.set_xlabel("Models")
+    ax_hm.set_ylabel("Top Ranked Compounds")
+    ax_hm.set_title("Consensus Model Probability Heatmap")
+
+    fig_hm.colorbar(im)
+
+    st.pyplot(fig_hm)
+
+else:
+    st.warning("No probability columns found for heatmap.")
                 st.download_button("Download Results",
                                    results.to_csv(index=False),
                                    "CaGS_AP_results.csv")
@@ -298,3 +327,4 @@ else:
             st.write(f"Std Dev: {sd_prob:.4f}")
 
             st.table(pd.DataFrame(prob_dict,index=["Probability"]).T)
+
