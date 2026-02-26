@@ -69,58 +69,44 @@ def load_model(name):
     return joblib.load(os.path.join(MODEL_DIR,name))
 
 # ============================================================
-# FINGERPRINTS (UPDATED TO REMOVE DEPRECATION WARNING)
+# FINGERPRINTS (CLOUD SAFE – RDKit 2025 Compatible)
 # ============================================================
 
-from rdkit import Chem
-from rdkit.Chem import AllChem, MACCSkeys
-import numpy as np
+from rdkit.Chem import rdFingerprintGenerator
+from rdkit import DataStructs
 
+# Standard Morgan (ECFP-like)
+morgan_gen_ecfp = rdFingerprintGenerator.GetMorganGenerator(
+    radius=2,
+    fpSize=1024
+)
 
-def fingerprints_from_smiles(smiles: str):
-    """
-    Generate combined ECFP4, FCFP4, and MACCS fingerprints
-    Returns numpy array or None if invalid SMILES
-    """
+# FCFP (Feature Morgan)
+# In new RDKit, feature fingerprints require FeatureGenerator
+morgan_gen_fcfp = rdFingerprintGenerator.GetMorganGenerator(
+    radius=2,
+    fpSize=1024,
+    atomInvariantsGenerator=rdFingerprintGenerator.GetMorganFeatureAtomInvGen()
+)
 
-    if not isinstance(smiles, str):
-        return None
-
+def fingerprints_from_smiles(smiles):
     mol = Chem.MolFromSmiles(smiles)
-
     if mol is None:
         return None
 
-    try:
-        # ECFP4 (Morgan radius=2)
-        ecfp = AllChem.GetMorganFingerprintAsBitVect(
-            mol,
-            radius=2,
-            nBits=1024
-        )
+    ecfp = morgan_gen_ecfp.GetFingerprint(mol)
+    fcfp = morgan_gen_fcfp.GetFingerprint(mol)
+    maccs = MACCSkeys.GenMACCSKeys(mol)
 
-        # FCFP4 (Feature-based Morgan)
-        fcfp = AllChem.GetMorganFingerprintAsBitVect(
-            mol,
-            radius=2,
-            nBits=1024,
-            useFeatures=True
-        )
+    ecfp_arr = np.zeros((1024,), dtype=int)
+    fcfp_arr = np.zeros((1024,), dtype=int)
+    maccs_arr = np.zeros((167,), dtype=int)
 
-        # MACCS keys (167 bits)
-        maccs = MACCSkeys.GenMACCSKeys(mol)
+    DataStructs.ConvertToNumpyArray(ecfp, ecfp_arr)
+    DataStructs.ConvertToNumpyArray(fcfp, fcfp_arr)
+    DataStructs.ConvertToNumpyArray(maccs, maccs_arr)
 
-        # Convert to numpy arrays
-        ecfp_arr = np.array(ecfp)
-        fcfp_arr = np.array(fcfp)
-        maccs_arr = np.array(maccs)
-
-        # Concatenate all fingerprints
-        return np.concatenate([ecfp_arr, fcfp_arr, maccs_arr])
-
-    except Exception:
-        return None
-
+    return np.concatenate([ecfp_arr, fcfp_arr, maccs_arr])
 # ============================================================
 # CONSENSUS METRICS
 # ============================================================
@@ -284,5 +270,6 @@ else:
             st.write(f"Std Dev: {sd_prob:.4f}")
 
             st.table(pd.DataFrame(prob_dict,index=["Probability"]).T)
+
 
 
